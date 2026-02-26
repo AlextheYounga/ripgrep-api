@@ -116,6 +116,20 @@ let matches = SearchBuilder::new("alpha")
 # Ok::<(), ripgrep_api::SearchError>(())
 ```
 
+## Walk-only file listing
+
+```rust
+use ripgrep_api::SearchBuilder;
+
+let files = SearchBuilder::new("irrelevant")
+    .path(".")
+    .glob("**/*.rs")
+    .walk_files()?;
+
+assert!(!files.is_empty());
+# Ok::<(), ripgrep_api::SearchError>(())
+```
+
 ## rg flag -> API method
 
 | rg flag | API method |

@@ -268,3 +268,72 @@ fn streaming_callbacks_receive_matches_and_context() {
     assert_eq!(counter.matches, 1);
     assert_eq!(counter.contexts, 2);
 }
+
+#[test]
+fn walk_files_respects_globs_and_types() {
+    let root = fixture_root();
+    let files = SearchBuilder::new("irrelevant")
+        .path(&root)
+        .glob("**/*.rs")
+        .walk_files()
+        .unwrap();
+
+    let rel_files: BTreeSet<_> = files.iter().map(|path| rel(path, &root)).collect();
+
+    assert_eq!(
+        rel_files,
+        BTreeSet::from([PathBuf::from("nested/inner.rs")])
+    );
+
+    let files = SearchBuilder::new("irrelevant")
+        .path(&root)
+        .type_("rust")
+        .walk_files()
+        .unwrap();
+
+    let rel_files: BTreeSet<_> = files.iter().map(|path| rel(path, &root)).collect();
+
+    assert_eq!(
+        rel_files,
+        BTreeSet::from([PathBuf::from("nested/inner.rs")])
+    );
+}
+
+#[test]
+fn walk_files_respects_ignore_and_hidden() {
+    let root = fixture_root();
+    let files = SearchBuilder::new("irrelevant")
+        .path(&root)
+        .walk_files()
+        .unwrap();
+
+    let rel_files: BTreeSet<_> = files.iter().map(|path| rel(path, &root)).collect();
+
+    assert!(!rel_files.contains(Path::new("ignored.txt")));
+    assert!(!rel_files.contains(Path::new(".hidden.txt")));
+
+    let files = SearchBuilder::new("irrelevant")
+        .path(&root)
+        .hidden()
+        .walk_files()
+        .unwrap();
+
+    let rel_files: BTreeSet<_> = files.iter().map(|path| rel(path, &root)).collect();
+
+    assert!(rel_files.contains(Path::new(".hidden.txt")));
+}
+
+#[test]
+fn walk_files_returns_only_files() {
+    let root = fixture_root();
+    let files = SearchBuilder::new("irrelevant")
+        .path(&root)
+        .walk_files()
+        .unwrap();
+
+    let rel_files: BTreeSet<_> = files.iter().map(|path| rel(path, &root)).collect();
+
+    assert!(!rel_files.contains(Path::new("nested")));
+    assert!(!rel_files.contains(Path::new("nested/deeper")));
+    assert!(rel_files.contains(Path::new("nested/deeper/deep.txt")));
+}

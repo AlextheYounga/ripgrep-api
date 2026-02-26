@@ -143,6 +143,20 @@ pub(crate) fn files_with_matches(config: &Config) -> Result<Vec<PathBuf>, Search
     Ok(files.into_iter().collect())
 }
 
+pub(crate) fn walk_files(config: &Config) -> Result<Vec<PathBuf>, SearchError> {
+    let mut files = Vec::new();
+
+    for entry in build_walker(config)?.build() {
+        let entry = entry?;
+        if !is_file_entry(&entry) {
+            continue;
+        }
+        files.push(entry.path().to_path_buf());
+    }
+
+    Ok(files)
+}
+
 fn build_searcher(config: &Config) -> Searcher {
     let mut builder = SearcherBuilder::new();
     builder.line_number(true);

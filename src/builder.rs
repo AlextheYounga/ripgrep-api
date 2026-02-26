@@ -347,4 +347,8 @@ impl SearchBuilder {
     pub fn files_with_matches(self) -> Result<Vec<PathBuf>, SearchError> {
         crate::engine::files_with_matches(&self.config)
     }
+
+    pub fn walk_files(self) -> Result<Vec<PathBuf>, SearchError> {
+        crate::engine::walk_files(&self.config)
+    }
 }

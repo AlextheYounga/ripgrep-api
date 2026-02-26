@@ -4,7 +4,7 @@ Coder-friendly Rust API wrapper around ripgrep's core crates.
 
 ## Install
 
-Crates.io (once published):
+Crates.io:
 
 ```toml
 ripgrep-api = "0.1"

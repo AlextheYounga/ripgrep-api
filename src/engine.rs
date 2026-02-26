@@ -8,12 +8,12 @@ use ignore::{overrides::OverrideBuilder, types::TypesBuilder, WalkBuilder};
 
 use crate::config::Config;
 use crate::error::SearchError;
-use crate::matcher;
+use crate::matcher::{self, EngineMatcher};
 use crate::sink::MatchSink;
 use crate::types::{ContextKind, ContextLine, Match, SubMatch};
 
 pub(crate) fn search(config: &Config) -> Result<Vec<Match>, SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut results = Vec::new();
 
@@ -32,7 +32,7 @@ pub(crate) fn search(config: &Config) -> Result<Vec<Match>, SearchError> {
 }
 
 pub(crate) fn search_with<S: MatchSink>(config: &Config, sink: &mut S) -> Result<(), SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
 
     for entry in build_walker(config)?.build() {
@@ -54,7 +54,7 @@ pub(crate) fn search_reader<R: io::Read>(
     reader: R,
     source: &Path,
 ) -> Result<Vec<Match>, SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut results = Vec::new();
     let sink = CollectSink::new(source, &matcher, &mut results, config.max_count);
@@ -68,7 +68,7 @@ pub(crate) fn search_reader_with<R: io::Read, S: MatchSink>(
     source: &Path,
     sink: &mut S,
 ) -> Result<(), SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut callback = CallbackSink::new(source, &matcher, sink, config.max_count);
     searcher.search_reader(&matcher, reader, &mut callback)?;
@@ -80,7 +80,7 @@ pub(crate) fn search_slice(
     slice: &[u8],
     source: &Path,
 ) -> Result<Vec<Match>, SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut results = Vec::new();
     let sink = CollectSink::new(source, &matcher, &mut results, config.max_count);
@@ -94,7 +94,7 @@ pub(crate) fn search_slice_with<S: MatchSink>(
     source: &Path,
     sink: &mut S,
 ) -> Result<(), SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut callback = CallbackSink::new(source, &matcher, sink, config.max_count);
     searcher.search_slice(&matcher, slice, &mut callback)?;
@@ -102,7 +102,7 @@ pub(crate) fn search_slice_with<S: MatchSink>(
 }
 
 pub(crate) fn count(config: &Config) -> Result<u64, SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut total = 0_u64;
 
@@ -122,7 +122,7 @@ pub(crate) fn count(config: &Config) -> Result<u64, SearchError> {
 }
 
 pub(crate) fn files_with_matches(config: &Config) -> Result<Vec<PathBuf>, SearchError> {
-    let matcher = matcher::build_regex(&config.pattern, config)?;
+    let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut files = BTreeSet::new();
 
@@ -148,6 +148,12 @@ fn build_searcher(config: &Config) -> Searcher {
     builder.line_number(true);
     builder.before_context(config.before_context);
     builder.after_context(config.after_context);
+    if let Some(choice) = config.memory_map.clone() {
+        builder.memory_map(choice);
+    }
+    if let Some(limit) = config.heap_limit {
+        builder.heap_limit(Some(limit));
+    }
     if config.binary_detection {
         builder.binary_detection(BinaryDetection::quit(b'\x00'));
     } else {
@@ -172,6 +178,10 @@ fn build_walker(config: &Config) -> Result<WalkBuilder, SearchError> {
         .git_ignore(config.ignore_vcs)
         .git_global(config.ignore_vcs)
         .git_exclude(config.ignore_vcs);
+
+    if let Some(threads) = config.threads {
+        builder.threads(threads);
+    }
 
     if let Some(overrides) = &config.overrides {
         builder.overrides(overrides.clone());
@@ -226,9 +236,11 @@ fn is_file_entry(entry: &ignore::DirEntry) -> bool {
         .unwrap_or(false)
 }
 
-struct CollectSink<'a, M: Matcher> {
+type DynMatcher = EngineMatcher;
+
+struct CollectSink<'a> {
     path: &'a Path,
-    matcher: &'a M,
+    matcher: &'a DynMatcher,
     results: &'a mut Vec<Match>,
     pending_before: Vec<ContextLine>,
     last_match_index: Option<usize>,
@@ -236,10 +248,10 @@ struct CollectSink<'a, M: Matcher> {
     match_count: usize,
 }
 
-impl<'a, M: Matcher> CollectSink<'a, M> {
+impl<'a> CollectSink<'a> {
     fn new(
         path: &'a Path,
-        matcher: &'a M,
+        matcher: &'a DynMatcher,
         results: &'a mut Vec<Match>,
         max_count: Option<usize>,
     ) -> Self {
@@ -255,7 +267,7 @@ impl<'a, M: Matcher> CollectSink<'a, M> {
     }
 }
 
-impl<'a, M: Matcher> Sink for CollectSink<'a, M> {
+impl<'a> Sink for CollectSink<'a> {
     type Error = io::Error;
 
     fn matched(&mut self, _searcher: &Searcher, mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
@@ -361,16 +373,21 @@ impl Sink for CountSink {
     }
 }
 
-struct CallbackSink<'a, M: Matcher, S: MatchSink> {
+struct CallbackSink<'a, S: MatchSink> {
     path: &'a Path,
-    matcher: &'a M,
+    matcher: &'a DynMatcher,
     sink: &'a mut S,
     max_count: Option<usize>,
     match_count: usize,
 }
 
-impl<'a, M: Matcher, S: MatchSink> CallbackSink<'a, M, S> {
-    fn new(path: &'a Path, matcher: &'a M, sink: &'a mut S, max_count: Option<usize>) -> Self {
+impl<'a, S: MatchSink> CallbackSink<'a, S> {
+    fn new(
+        path: &'a Path,
+        matcher: &'a DynMatcher,
+        sink: &'a mut S,
+        max_count: Option<usize>,
+    ) -> Self {
         Self {
             path,
             matcher,
@@ -381,7 +398,7 @@ impl<'a, M: Matcher, S: MatchSink> CallbackSink<'a, M, S> {
     }
 }
 
-impl<'a, M: Matcher, S: MatchSink> Sink for CallbackSink<'a, M, S> {
+impl<'a, S: MatchSink> Sink for CallbackSink<'a, S> {
     type Error = io::Error;
 
     fn matched(&mut self, _searcher: &Searcher, mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {

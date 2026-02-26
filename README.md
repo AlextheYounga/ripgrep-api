@@ -49,6 +49,44 @@ assert_eq!(matches.len(), 1);
 # Ok::<(), ripgrep_api::SearchError>(())
 ```
 
+## PCRE2 (feature flag)
+
+```rust
+# #[cfg(feature = "pcre2")]
+# {
+use ripgrep_api::SearchBuilder;
+
+let matches = SearchBuilder::new(r"(foo)(bar)\1")
+    .pcre2()
+    .search_slice(b"foobarfoo")?;
+
+assert_eq!(matches.len(), 1);
+# Ok::<(), ripgrep_api::SearchError>(())
+# }
+```
+
+Enable the feature in Cargo:
+
+```toml
+ripgrep-api = { version = "0.1", features = ["pcre2"] }
+```
+
+## Performance knobs
+
+```rust
+use ripgrep_api::SearchBuilder;
+use grep_searcher::MmapChoice;
+
+let matches = SearchBuilder::new("alpha")
+    .path(".")
+    .threads(4)
+    .memory_map(unsafe { MmapChoice::auto() })
+    .heap_limit(64 * 1024)
+    .build()?
+    .collect::<Vec<_>>();
+# Ok::<(), ripgrep_api::SearchError>(())
+```
+
 ## Custom file types and overrides
 
 ```rust
@@ -82,3 +120,8 @@ let matches = SearchBuilder::new("alpha")
 | `-C/--context` | `context(...)` |
 | `-m/--max-count` | `max_count(...)` |
 | `-uuu` | `hidden()` + `ignore(false)` |
+| `-P/--pcre2` | `pcre2()` (feature: `pcre2`) |
+| `-j/--threads` | `threads(...)` |
+| `--mmap` | `memory_map(...)` |
+| `--no-mmap` | `memory_map(MmapChoice::never())` |
+| `--heap-limit` | `heap_limit(...)` |

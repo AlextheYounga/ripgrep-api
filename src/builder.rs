@@ -309,6 +309,37 @@ impl SearchBuilder {
         self
     }
 
+    pub fn threads(mut self, threads: usize) -> Self {
+        self.config.threads = Some(threads);
+        self
+    }
+
+    pub fn memory_map(mut self, choice: grep_searcher::MmapChoice) -> Self {
+        self.config.memory_map = Some(choice);
+        self
+    }
+
+    pub fn heap_limit(mut self, bytes: usize) -> Self {
+        self.config.heap_limit = Some(bytes);
+        self
+    }
+
+    pub fn no_heap_limit(mut self) -> Self {
+        self.config.heap_limit = None;
+        self
+    }
+
+    pub fn engine_default(mut self) -> Self {
+        self.config.engine = crate::config::RegexEngine::Default;
+        self
+    }
+
+    #[cfg(feature = "pcre2")]
+    pub fn pcre2(mut self) -> Self {
+        self.config.engine = crate::config::RegexEngine::Pcre2;
+        self
+    }
+
     pub fn count(self) -> Result<u64, SearchError> {
         crate::engine::count(&self.config)
     }

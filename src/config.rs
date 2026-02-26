@@ -27,6 +27,10 @@ pub(crate) struct Config {
     pub(crate) word: bool,
     pub(crate) line_regexp: bool,
     pub(crate) binary_detection: bool,
+    pub(crate) engine: RegexEngine,
+    pub(crate) threads: Option<usize>,
+    pub(crate) memory_map: Option<grep_searcher::MmapChoice>,
+    pub(crate) heap_limit: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +38,13 @@ pub(crate) enum CaseMode {
     Smart,
     Insensitive,
     Sensitive,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RegexEngine {
+    Default,
+    #[cfg(feature = "pcre2")]
+    Pcre2,
 }
 
 impl Config {
@@ -63,6 +74,10 @@ impl Config {
             word: false,
             line_regexp: false,
             binary_detection: true,
+            engine: RegexEngine::Default,
+            threads: None,
+            memory_map: None,
+            heap_limit: None,
         }
     }
 }

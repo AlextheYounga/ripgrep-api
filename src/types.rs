@@ -8,6 +8,7 @@ pub struct Match {
     pub bytes: Vec<u8>,
     pub submatches: Vec<SubMatch>,
     pub line_text: String,
+    pub context: Vec<ContextLine>,
 }
 
 #[derive(Debug, Clone)]
@@ -24,8 +25,9 @@ pub struct ContextLine {
     pub line_text: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ContextKind {
     Before,
     After,
+    Other,
 }

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use ignore::{overrides::Override, types::Types};
+
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
     pub(crate) pattern: String,
@@ -7,6 +9,9 @@ pub(crate) struct Config {
     pub(crate) globs: Vec<String>,
     pub(crate) types: Vec<String>,
     pub(crate) type_not: Vec<String>,
+    pub(crate) type_defs: Vec<(String, String)>,
+    pub(crate) overrides: Option<Override>,
+    pub(crate) types_override: Option<Types>,
     pub(crate) max_depth: Option<usize>,
     pub(crate) max_filesize: Option<u64>,
     pub(crate) search_hidden: bool,
@@ -40,6 +45,9 @@ impl Config {
             globs: Vec::new(),
             types: Vec::new(),
             type_not: Vec::new(),
+            type_defs: Vec::new(),
+            overrides: None,
+            types_override: None,
             max_depth: None,
             max_filesize: None,
             search_hidden: false,

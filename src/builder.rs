@@ -1,7 +1,28 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::{config::CaseMode, config::Config, error::SearchError, search::Search};
+use crate::{
+    config::CaseMode,
+    config::Config,
+    error::SearchError,
+    search::Search,
+    sink::MatchSink,
+    types::{ContextLine, Match},
+};
 
+/// Fluent builder for rg-style search configuration.
+///
+/// ```rust
+/// use ripgrep_api::SearchBuilder;
+///
+/// let matches: Vec<_> = SearchBuilder::new("todo")
+///     .path(".")
+///     .glob("**/*.rs")
+///     .smart_case()
+///     .build()?
+///     .collect();
+/// # Ok::<(), ripgrep_api::SearchError>(())
+/// ```
 pub struct SearchBuilder {
     config: Config,
 }
@@ -37,6 +58,125 @@ impl SearchBuilder {
         Search::from_config(self.config)
     }
 
+    pub fn search_with<S: MatchSink>(self, sink: &mut S) -> Result<(), SearchError> {
+        crate::engine::search_with(&self.config, sink)
+    }
+
+    pub fn for_each<F>(self, on_match: F) -> Result<(), SearchError>
+    where
+        F: FnMut(&Match) -> bool,
+    {
+        struct MatchOnly<F>(F);
+
+        impl<F> MatchSink for MatchOnly<F>
+        where
+            F: FnMut(&Match) -> bool,
+        {
+            fn matched(&mut self, mat: &Match) -> bool {
+                (self.0)(mat)
+            }
+        }
+
+        let mut sink = MatchOnly(on_match);
+        crate::engine::search_with(&self.config, &mut sink)
+    }
+
+    pub fn for_each_with_context<F, C>(self, on_match: F, on_context: C) -> Result<(), SearchError>
+    where
+        F: FnMut(&Match) -> bool,
+        C: FnMut(&ContextLine) -> bool,
+    {
+        struct MatchAndContext<F, C> {
+            on_match: F,
+            on_context: C,
+        }
+
+        impl<F, C> MatchSink for MatchAndContext<F, C>
+        where
+            F: FnMut(&Match) -> bool,
+            C: FnMut(&ContextLine) -> bool,
+        {
+            fn matched(&mut self, mat: &Match) -> bool {
+                (self.on_match)(mat)
+            }
+
+            fn context(&mut self, line: &ContextLine) -> bool {
+                (self.on_context)(line)
+            }
+        }
+
+        let mut sink = MatchAndContext {
+            on_match,
+            on_context,
+        };
+        crate::engine::search_with(&self.config, &mut sink)
+    }
+
+    pub fn search_reader<R: Read>(self, reader: R) -> Result<Vec<Match>, SearchError> {
+        crate::engine::search_reader(&self.config, reader, Path::new("<reader>"))
+    }
+
+    pub fn search_reader_named<R, P>(self, source: P, reader: R) -> Result<Vec<Match>, SearchError>
+    where
+        R: Read,
+        P: AsRef<Path>,
+    {
+        crate::engine::search_reader(&self.config, reader, source.as_ref())
+    }
+
+    pub fn search_slice(self, slice: &[u8]) -> Result<Vec<Match>, SearchError> {
+        crate::engine::search_slice(&self.config, slice, Path::new("<memory>"))
+    }
+
+    pub fn search_slice_named<P>(self, source: P, slice: &[u8]) -> Result<Vec<Match>, SearchError>
+    where
+        P: AsRef<Path>,
+    {
+        crate::engine::search_slice(&self.config, slice, source.as_ref())
+    }
+
+    pub fn search_reader_with<R, S>(self, reader: R, sink: &mut S) -> Result<(), SearchError>
+    where
+        R: Read,
+        S: MatchSink,
+    {
+        crate::engine::search_reader_with(&self.config, reader, Path::new("<reader>"), sink)
+    }
+
+    pub fn search_reader_with_named<R, P, S>(
+        self,
+        source: P,
+        reader: R,
+        sink: &mut S,
+    ) -> Result<(), SearchError>
+    where
+        R: Read,
+        P: AsRef<Path>,
+        S: MatchSink,
+    {
+        crate::engine::search_reader_with(&self.config, reader, source.as_ref(), sink)
+    }
+
+    pub fn search_slice_with<S>(self, slice: &[u8], sink: &mut S) -> Result<(), SearchError>
+    where
+        S: MatchSink,
+    {
+        crate::engine::search_slice_with(&self.config, slice, Path::new("<memory>"), sink)
+    }
+
+    pub fn search_slice_with_named<P, S>(
+        self,
+        source: P,
+        slice: &[u8],
+        sink: &mut S,
+    ) -> Result<(), SearchError>
+    where
+        P: AsRef<Path>,
+        S: MatchSink,
+    {
+        crate::engine::search_slice_with(&self.config, slice, source.as_ref(), sink)
+    }
+
     pub fn glob(mut self, pattern: impl Into<String>) -> Self {
         self.config.globs.push(pattern.into());
         self
@@ -49,6 +189,25 @@ impl SearchBuilder {
 
     pub fn type_not(mut self, name: impl Into<String>) -> Self {
         self.config.type_not.push(name.into());
+        self
+    }
+
+    pub fn type_add(mut self, name: impl Into<String>, glob: impl Into<String>) -> Self {
+        self.config.type_defs.push((name.into(), glob.into()));
+        self
+    }
+
+    pub fn types(mut self, types: ignore::types::Types) -> Self {
+        self.config.types_override = Some(types);
+        self.config.types.clear();
+        self.config.type_not.clear();
+        self.config.type_defs.clear();
+        self
+    }
+
+    pub fn overrides(mut self, overrides: ignore::overrides::Override) -> Self {
+        self.config.overrides = Some(overrides);
+        self.config.globs.clear();
         self
     }
 

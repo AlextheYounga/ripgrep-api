@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use ripgrep_api::{ContextKind, SearchBuilder};
+use ripgrep_api::{ContextKind, MatchSink, SearchBuilder};
 
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -156,7 +156,7 @@ fn max_count_caps_matches_per_file() {
 fn count_returns_total_matches() {
     let root = fixture_root();
     let total = SearchBuilder::new("alpha").path(&root).count().unwrap();
-    assert_eq!(total, 4);
+    assert_eq!(total, 5);
 }
 
 #[test]
@@ -172,9 +172,99 @@ fn files_with_matches_returns_unique_paths() {
     assert_eq!(
         rel_files,
         BTreeSet::from([
+            PathBuf::from("custom.foo"),
             PathBuf::from("nested/deeper/deep.txt"),
             PathBuf::from("nested/inner.rs"),
             PathBuf::from("root.txt"),
         ])
     );
+}
+
+#[test]
+fn type_definitions_can_be_added() {
+    let root = fixture_root();
+    let results: Vec<_> = SearchBuilder::new("alpha")
+        .path(&root)
+        .type_add("custom", "*.foo")
+        .type_("custom")
+        .build()
+        .unwrap()
+        .collect();
+
+    let files: BTreeSet<_> = results.iter().map(|m| rel(&m.path, &root)).collect();
+
+    assert_eq!(files, BTreeSet::from([PathBuf::from("custom.foo")]));
+}
+
+#[test]
+fn overrides_can_whitelist_ignored_files() {
+    let root = fixture_root();
+    let mut builder = ignore::overrides::OverrideBuilder::new(&root);
+    builder.add("ignored.txt").unwrap();
+    let overrides = builder.build().unwrap();
+
+    let results: Vec<_> = SearchBuilder::new("alpha")
+        .path(&root)
+        .overrides(overrides)
+        .build()
+        .unwrap()
+        .collect();
+
+    let files: BTreeSet<_> = results.iter().map(|m| rel(&m.path, &root)).collect();
+
+    assert!(files.contains(Path::new("ignored.txt")));
+}
+
+#[test]
+fn search_slice_works() {
+    let haystack = b"zero\nmatch\nthree\n";
+    let results: Vec<_> = SearchBuilder::new("match").search_slice(haystack).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].line_text.contains("match"));
+}
+
+#[test]
+fn search_reader_works() {
+    let data = b"alpha\n".to_vec();
+    let results: Vec<_> = SearchBuilder::new("alpha")
+        .search_reader(std::io::Cursor::new(data))
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn streaming_callbacks_receive_matches_and_context() {
+    struct Counter {
+        matches: usize,
+        contexts: usize,
+    }
+
+    impl MatchSink for Counter {
+        fn matched(&mut self, _mat: &ripgrep_api::Match) -> bool {
+            self.matches += 1;
+            true
+        }
+
+        fn context(&mut self, _line: &ripgrep_api::ContextLine) -> bool {
+            self.contexts += 1;
+            true
+        }
+    }
+
+    let root = fixture_root();
+    let mut counter = Counter {
+        matches: 0,
+        contexts: 0,
+    };
+
+    SearchBuilder::new("match")
+        .path(root.join("context.txt"))
+        .context(1)
+        .search_with(&mut counter)
+        .unwrap();
+
+    assert_eq!(counter.matches, 1);
+    assert_eq!(counter.contexts, 2);
 }

@@ -1,14 +1,16 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+mod builder;
+mod config;
+mod engine;
+mod error;
+mod matcher;
+mod search;
+mod types;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use builder::SearchBuilder;
+pub use error::SearchError;
+pub use search::Search;
+pub use types::{ContextLine, ContextKind, Match, SubMatch};
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn rg(pattern: impl Into<String>) -> SearchBuilder {
+    SearchBuilder::new(pattern)
 }

@@ -2,6 +2,20 @@
 
 Coder-friendly Rust API wrapper around ripgrep's core crates.
 
+## Install
+
+Crates.io (once published):
+
+```toml
+ripgrep-api = "0.1"
+```
+
+Git dependency (current repo):
+
+```toml
+ripgrep-api = { git = "https://github.com/AlextheYounga/ripgrep-api.git" }
+```
+
 ## Quickstart
 
 ```rust

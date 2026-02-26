@@ -2,6 +2,10 @@
 name = "ripgrep-api"
 version = "0.1.0"
 edition = "2024"
+authors=["Alex Younger <thealexyounger@proton.me>"]
+description="Dev-friendly API wrapper around the ripgrep implementation to be used directly in Rust projects."
+license="MIT"
+publish=true
 
 [dependencies]
 globset = "0.4.18"

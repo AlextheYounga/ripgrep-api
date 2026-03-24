@@ -31,6 +31,7 @@ pub(crate) struct Config {
     pub(crate) threads: Option<usize>,
     pub(crate) memory_map: Option<grep_searcher::MmapChoice>,
     pub(crate) heap_limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +79,7 @@ impl Config {
             threads: None,
             memory_map: None,
             heap_limit: None,
+            limit: None,
         }
     }
 }

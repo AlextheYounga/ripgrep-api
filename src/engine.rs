@@ -23,9 +23,19 @@ pub(crate) fn search(config: &Config) -> Result<Vec<Match>, SearchError> {
             continue;
         }
 
+        let remaining = remaining_limit(config.limit, results.len());
+        if remaining == Some(0) {
+            break;
+        }
+
         let path = entry.path().to_path_buf();
-        let sink = CollectSink::new(&path, &matcher, &mut results, config.max_count);
+        let effective_max = effective_max_count(config.max_count, remaining);
+        let sink = CollectSink::new(&path, &matcher, &mut results, effective_max);
         searcher.search_path(&matcher, &path, sink)?;
+    }
+
+    if let Some(limit) = config.limit {
+        results.truncate(limit);
     }
 
     Ok(results)
@@ -34,6 +44,7 @@ pub(crate) fn search(config: &Config) -> Result<Vec<Match>, SearchError> {
 pub(crate) fn search_with<S: MatchSink>(config: &Config, sink: &mut S) -> Result<(), SearchError> {
     let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
+    let mut global_count: usize = 0;
 
     for entry in build_walker(config)?.build() {
         let entry = entry?;
@@ -41,9 +52,16 @@ pub(crate) fn search_with<S: MatchSink>(config: &Config, sink: &mut S) -> Result
             continue;
         }
 
+        let remaining = remaining_limit(config.limit, global_count);
+        if remaining == Some(0) {
+            break;
+        }
+
         let path = entry.path().to_path_buf();
-        let mut callback = CallbackSink::new(&path, &matcher, sink, config.max_count);
+        let effective_max = effective_max_count(config.max_count, remaining);
+        let mut callback = CallbackSink::new(&path, &matcher, sink, effective_max);
         searcher.search_path(&matcher, &path, &mut callback)?;
+        global_count = global_count.saturating_add(callback.match_count);
     }
 
     Ok(())
@@ -57,7 +75,8 @@ pub(crate) fn search_reader<R: io::Read>(
     let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut results = Vec::new();
-    let sink = CollectSink::new(source, &matcher, &mut results, config.max_count);
+    let effective_max = effective_max_count(config.max_count, config.limit);
+    let sink = CollectSink::new(source, &matcher, &mut results, effective_max);
     searcher.search_reader(&matcher, reader, sink)?;
     Ok(results)
 }
@@ -70,7 +89,8 @@ pub(crate) fn search_reader_with<R: io::Read, S: MatchSink>(
 ) -> Result<(), SearchError> {
     let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
-    let mut callback = CallbackSink::new(source, &matcher, sink, config.max_count);
+    let effective_max = effective_max_count(config.max_count, config.limit);
+    let mut callback = CallbackSink::new(source, &matcher, sink, effective_max);
     searcher.search_reader(&matcher, reader, &mut callback)?;
     Ok(())
 }
@@ -83,7 +103,8 @@ pub(crate) fn search_slice(
     let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
     let mut results = Vec::new();
-    let sink = CollectSink::new(source, &matcher, &mut results, config.max_count);
+    let effective_max = effective_max_count(config.max_count, config.limit);
+    let sink = CollectSink::new(source, &matcher, &mut results, effective_max);
     searcher.search_slice(&matcher, slice, sink)?;
     Ok(results)
 }
@@ -96,7 +117,8 @@ pub(crate) fn search_slice_with<S: MatchSink>(
 ) -> Result<(), SearchError> {
     let matcher = matcher::build_matcher(&config.pattern, config)?;
     let mut searcher = build_searcher(config);
-    let mut callback = CallbackSink::new(source, &matcher, sink, config.max_count);
+    let effective_max = effective_max_count(config.max_count, config.limit);
+    let mut callback = CallbackSink::new(source, &matcher, sink, effective_max);
     searcher.search_slice(&matcher, slice, &mut callback)?;
     Ok(())
 }
@@ -112,10 +134,22 @@ pub(crate) fn count(config: &Config) -> Result<u64, SearchError> {
             continue;
         }
 
+        if let Some(limit) = config.limit {
+            if total >= limit as u64 {
+                break;
+            }
+        }
+
         let path = entry.path().to_path_buf();
-        let mut sink = CountSink::new(config.max_count);
+        let remaining = config.limit.map(|l| (l as u64).saturating_sub(total) as usize);
+        let effective_max = effective_max_count(config.max_count, remaining);
+        let mut sink = CountSink::new(effective_max);
         searcher.search_path(&matcher, &path, &mut sink)?;
         total = total.saturating_add(sink.count());
+    }
+
+    if let Some(limit) = config.limit {
+        total = total.min(limit as u64);
     }
 
     Ok(total)
@@ -241,6 +275,23 @@ fn build_walker(config: &Config) -> Result<WalkBuilder, SearchError> {
     }
 
     Ok(builder)
+}
+
+/// Given a global limit and the current count, return how many results remain.
+/// `None` means unlimited.
+fn remaining_limit(limit: Option<usize>, current: usize) -> Option<usize> {
+    limit.map(|l| l.saturating_sub(current))
+}
+
+/// Combine `max_count` (per-file) with an optional remaining global limit,
+/// returning the tighter of the two.
+fn effective_max_count(max_count: Option<usize>, remaining: Option<usize>) -> Option<usize> {
+    match (max_count, remaining) {
+        (Some(mc), Some(rem)) => Some(mc.min(rem)),
+        (Some(mc), None) => Some(mc),
+        (None, Some(rem)) => Some(rem),
+        (None, None) => None,
+    }
 }
 
 fn is_file_entry(entry: &ignore::DirEntry) -> bool {

@@ -324,6 +324,87 @@ fn walk_files_respects_ignore_and_hidden() {
 }
 
 #[test]
+fn limit_caps_total_results() {
+    let root = fixture_root();
+    let results: Vec<_> = SearchBuilder::new("alpha")
+        .path(&root)
+        .limit(2)
+        .build()
+        .unwrap()
+        .collect();
+
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn limit_caps_count() {
+    let root = fixture_root();
+    let total = SearchBuilder::new("alpha")
+        .path(&root)
+        .limit(3)
+        .count()
+        .unwrap();
+
+    assert_eq!(total, 3);
+}
+
+#[test]
+fn limit_above_total_returns_all() {
+    let root = fixture_root();
+    let results: Vec<_> = SearchBuilder::new("alpha")
+        .path(&root)
+        .limit(100)
+        .build()
+        .unwrap()
+        .collect();
+
+    assert_eq!(results.len(), 5);
+}
+
+#[test]
+fn limit_works_with_for_each() {
+    let root = fixture_root();
+    let mut count = 0usize;
+    SearchBuilder::new("alpha")
+        .path(&root)
+        .limit(2)
+        .for_each(|_mat| {
+            count += 1;
+            true
+        })
+        .unwrap();
+
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn limit_works_with_search_slice() {
+    let haystack = b"alpha\nalpha\nalpha\nalpha\n";
+    let results = SearchBuilder::new("alpha")
+        .limit(2)
+        .search_slice(haystack)
+        .unwrap();
+
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn limit_combined_with_max_count() {
+    // max_count=1 means at most 1 match per file; limit=2 means at most 2 total.
+    // There are 4 files containing "alpha", so max_count alone would give 4.
+    let root = fixture_root();
+    let results: Vec<_> = SearchBuilder::new("alpha")
+        .path(&root)
+        .max_count(1)
+        .limit(2)
+        .build()
+        .unwrap()
+        .collect();
+
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
 fn walk_files_returns_only_files() {
     let root = fixture_root();
     let files = SearchBuilder::new("irrelevant")

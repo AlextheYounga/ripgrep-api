@@ -304,6 +304,30 @@ impl SearchBuilder {
         self
     }
 
+    /// Cap the total number of results returned across all files.
+    ///
+    /// Unlike [`max_count`](Self::max_count), which limits matches *per file*,
+    /// `limit` caps the **global** result count — equivalent to piping
+    /// `rg | head -n` on the command line but with the added benefit of
+    /// short-circuiting the search once the limit is reached.
+    ///
+    /// ```rust
+    /// use ripgrep_api::SearchBuilder;
+    ///
+    /// let first_five: Vec<_> = SearchBuilder::new("TODO")
+    ///     .path(".")
+    ///     .glob("**/*.rs")
+    ///     .limit(5)
+    ///     .build()?
+    ///     .collect();
+    /// assert!(first_five.len() <= 5);
+    /// # Ok::<(), ripgrep_api::SearchError>(())
+    /// ```
+    pub fn limit(mut self, n: usize) -> Self {
+        self.config.limit = Some(n);
+        self
+    }
+
     pub fn binary_detection(mut self, yes: bool) -> Self {
         self.config.binary_detection = yes;
         self

@@ -116,6 +116,30 @@ let matches = SearchBuilder::new("alpha")
 # Ok::<(), ripgrep_api::SearchError>(())
 ```
 
+## Limiting total results
+
+`limit(n)` caps the total number of results across all files — the API
+equivalent of `rg ... | head -n`. The search short-circuits once the limit
+is reached, so it stays efficient on large codebases.
+
+```rust
+use ripgrep_api::SearchBuilder;
+
+let first_five: Vec<_> = SearchBuilder::new("TODO")
+    .path(".")
+    .glob("**/*.rs")
+    .limit(5)
+    .build()?
+    .collect();
+
+assert!(first_five.len() <= 5);
+# Ok::<(), ripgrep_api::SearchError>(())
+```
+
+This is different from `max_count(n)`, which limits matches *per file*.
+You can combine them: `max_count(1).limit(10)` returns at most 10 results,
+with at most 1 from any single file.
+
 ## Walk-only file listing
 
 ```rust
@@ -153,3 +177,4 @@ assert!(!files.is_empty());
 | `--mmap` | `memory_map(...)` |
 | `--no-mmap` | `memory_map(MmapChoice::never())` |
 | `--heap-limit` | `heap_limit(...)` |
+| *\| head -n* | `limit(...)` |
